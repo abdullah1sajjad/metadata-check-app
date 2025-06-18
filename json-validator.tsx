@@ -295,6 +295,41 @@ export default function Component() {
               index,
             });
           }
+
+          if (prompt.level_of_correctness !== 2) {
+            const issueFields = ["issue_type", "issue_comment", "issue_source"];
+            issueFields.forEach((field) => {
+              if (!prompt[field] || prompt[field].trim() === "") {
+                validationErrors.push({
+                  field,
+                  message: `${field} should not be empty when level_of_correctness is not 2`,
+                  index,
+                });
+              }
+            });
+
+            // Check issue_type values when required
+            const validIssueTypes = [
+              "missing_memory",
+              "technical_inconsistency",
+              "tool",
+              "code_correctness",
+              "setup",
+              "other",
+            ];
+            if (
+              prompt.issue_type &&
+              !validIssueTypes.includes(prompt.issue_type)
+            ) {
+              validationErrors.push({
+                field: "issue_type",
+                message: `Issue type should be one of: ${validIssueTypes.join(
+                  ", "
+                )}`,
+                index,
+              });
+            }
+          }
         });
       }
 
