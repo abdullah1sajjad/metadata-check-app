@@ -27,12 +27,36 @@ export default function Component() {
   const [promptCount, setPromptCount] = useState("");
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [isValid, setIsValid] = useState<boolean | null>(null);
-
   const validateJson = () => {
     const validationErrors: ValidationError[] = [];
 
     try {
       const data = JSON.parse(jsonInput);
+
+      // Trim all string values except 'prompt' field
+      const trimStringValues = (obj: any): any => {
+        if (Array.isArray(obj)) {
+          return obj.map(trimStringValues);
+        } else if (obj !== null && typeof obj === "object") {
+          const trimmed: any = {};
+          for (const [key, value] of Object.entries(obj)) {
+            if (key === "prompt") {
+              // Don't trim the prompt field
+              trimmed[key] = value;
+            } else if (typeof value === "string") {
+              trimmed[key] = value.trim();
+            } else {
+              trimmed[key] = trimStringValues(value);
+            }
+          }
+          return trimmed;
+        }
+        return obj;
+      };
+
+      // Apply trimming to the parsed data
+      const trimmedData = trimStringValues(data);
+
       const expectedPromptCount = Number.parseInt(promptCount);
 
       // Check if promptCount is a positive whole number
@@ -46,23 +70,21 @@ export default function Component() {
           field: "prompt_count",
           message: "Number of prompts must be a positive whole number",
         });
-      }
-
-      // Check prompts array length
-      if (!data.prompts || !Array.isArray(data.prompts)) {
+      } // Check prompts array length
+      if (!trimmedData.prompts || !Array.isArray(trimmedData.prompts)) {
         validationErrors.push({
           field: "prompts",
           message: "Prompts array is missing or not an array",
         });
-      } else if (data.prompts.length !== expectedPromptCount) {
+      } else if (trimmedData.prompts.length !== expectedPromptCount) {
         validationErrors.push({
           field: "prompts",
-          message: `Prompts array length (${data.prompts.length}) does not match expected count (${expectedPromptCount})`,
+          message: `Prompts array length (${trimmedData.prompts.length}) does not match expected count (${expectedPromptCount})`,
         });
       }
 
       // Check uuid and hfi_id consistency
-      if (!data.uuid || data.uuid.trim() === "") {
+      if (!trimmedData.uuid || trimmedData.uuid === "") {
         validationErrors.push({
           field: "uuid",
           message: "UUID should not be empty",
@@ -70,12 +92,12 @@ export default function Component() {
       }
 
       // Check jira_id
-      if (!data.jira_id || data.jira_id.trim() === "") {
+      if (!trimmedData.jira_id || trimmedData.jira_id === "") {
         validationErrors.push({
           field: "jira_id",
           message: "JIRA ID should not be empty",
         });
-      } else if (!data.jira_id.startsWith("ANTHS-")) {
+      } else if (!trimmedData.jira_id.startsWith("ANTHS-")) {
         validationErrors.push({
           field: "jira_id",
           message: "JIRA ID should start with 'ANTHS-'",
@@ -84,8 +106,8 @@ export default function Component() {
 
       // Check programming_language
       if (
-        !data.programming_language ||
-        data.programming_language.trim() === ""
+        !trimmedData.programming_language ||
+        trimmedData.programming_language === ""
       ) {
         validationErrors.push({
           field: "programming_language",
@@ -96,7 +118,7 @@ export default function Component() {
       // Check model
       const expectedModel =
         "83aa91117c2fac3e25a3757eaa59f29ed3aeaf4dd7d3d384c673086c321e0644";
-      if (data.model !== expectedModel) {
+      if (trimmedData.model !== expectedModel) {
         validationErrors.push({
           field: "model",
           message: `Model should be exactly: ${expectedModel}`,
@@ -104,7 +126,7 @@ export default function Component() {
       }
 
       // Check root_gdrive
-      if (!data.root_gdrive || data.root_gdrive.trim() === "") {
+      if (!trimmedData.root_gdrive || trimmedData.root_gdrive === "") {
         validationErrors.push({
           field: "root_gdrive",
           message: "Root Google Drive should not be empty",
@@ -113,8 +135,8 @@ export default function Component() {
 
       // Check workflow and codebase
       if (
-        !data.workflow ||
-        !["new_codebase", "existing_codebase"].includes(data.workflow)
+        !trimmedData.workflow ||
+        !["new_codebase", "existing_codebase"].includes(trimmedData.workflow)
       ) {
         validationErrors.push({
           field: "workflow",
@@ -122,16 +144,19 @@ export default function Component() {
             "Workflow should be either 'new_codebase' or 'existing_codebase'",
         });
       } else {
-        if (data.workflow === "new_codebase") {
-          if (data.codebase?.url !== "" || data.codebase?.description !== "") {
+        if (trimmedData.workflow === "new_codebase") {
+          if (
+            trimmedData.codebase?.url !== "" ||
+            trimmedData.codebase?.description !== ""
+          ) {
             validationErrors.push({
               field: "codebase",
               message:
                 "For new_codebase workflow, codebase url and description should be empty",
             });
           }
-        } else if (data.workflow === "existing_codebase") {
-          if (!data.codebase?.url || data.codebase.url.trim() === "") {
+        } else if (trimmedData.workflow === "existing_codebase") {
+          if (!trimmedData.codebase?.url || trimmedData.codebase.url === "") {
             validationErrors.push({
               field: "codebase.url",
               message:
@@ -139,8 +164,8 @@ export default function Component() {
             });
           }
           if (
-            !data.codebase?.description ||
-            data.codebase.description.trim() === ""
+            !trimmedData.codebase?.description ||
+            trimmedData.codebase.description === ""
           ) {
             validationErrors.push({
               field: "codebase.description",
@@ -152,10 +177,10 @@ export default function Component() {
       }
 
       // Validate prompts array
-      if (data.prompts && Array.isArray(data.prompts)) {
-        data.prompts.forEach((prompt: any, index: number) => {
+      if (trimmedData.prompts && Array.isArray(trimmedData.prompts)) {
+        trimmedData.prompts.forEach((prompt: any, index: number) => {
           // Check hfi_id matches uuid
-          if (prompt.hfi_id !== data.uuid) {
+          if (prompt.hfi_id !== trimmedData.uuid) {
             validationErrors.push({
               field: "hfi_id",
               message: "HFI ID should match the main UUID",
@@ -331,18 +356,16 @@ export default function Component() {
             }
           }
         });
-      }
-
-      // Check memory object
-      if (!data.memory) {
+      } // Check memory object
+      if (!trimmedData.memory) {
         validationErrors.push({
           field: "memory",
           message: "Memory object is required",
         });
       } else {
         if (
-          !data.memory.memory_comment ||
-          data.memory.memory_comment.trim() === ""
+          !trimmedData.memory.memory_comment ||
+          trimmedData.memory.memory_comment === ""
         ) {
           validationErrors.push({
             field: "memory.memory_comment",
@@ -363,8 +386,8 @@ export default function Component() {
 
         memoryBooleanFields.forEach((field) => {
           if (
-            data.memory[field] &&
-            !["yes", "no"].includes(data.memory[field])
+            trimmedData.memory[field] &&
+            !["yes", "no", "Yes", "No"].includes(trimmedData.memory[field])
           ) {
             validationErrors.push({
               field: `memory.${field}`,
