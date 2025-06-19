@@ -15,12 +15,133 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useForm, useFieldArray } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Copy, Plus, Trash2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface ValidationError {
   field: string;
   message: string;
   index?: number;
 }
+
+const metadataSchema = z
+  .object({
+    uuid: z.string().min(1, "UUID is required"),
+    jira_id: z
+      .string()
+      .min(1, "JIRA ID is required")
+      .startsWith("ANTHS-", "JIRA ID must start with 'ANTHS-'"),
+    programming_language: z.string().min(1, "Programming language is required"),
+    model: z.literal(
+      "83aa91117c2fac3e25a3757eaa59f29ed3aeaf4dd7d3d384c673086c321e0644"
+    ),
+    root_gdrive: z.string().url("Must be a valid URL"),
+    workflow: z.enum(["new_codebase", "existing_codebase"]),
+    codebase: z.object({
+      url: z.string(),
+      description: z.string(),
+    }),
+    prompts: z.array(
+      z
+        .object({
+          hfi_id: z.string(),
+          prompt: z.string().min(1, "Prompt is required"),
+          choice: z.number().min(0).max(7),
+          gdrive: z.string().url("Must be a valid URL"),
+          usecase: z.enum([
+            "initial_development",
+            "feature_implementation",
+            "debugging_fixes",
+            "optimization_testing",
+          ]),
+          comment: z.string().min(1, "Comment is required"),
+          issue_type: z
+            .enum([
+              "missing_memory",
+              "technical_inconsistency",
+              "tool",
+              "code_correctness",
+              "setup",
+              "other",
+            ])
+            .optional(),
+          issue_comment: z.string().optional(),
+          issue_source: z.string().optional(),
+          level_of_correctness: z.number().min(-1).max(2),
+          level_of_correctness_comment: z
+            .string()
+            .min(1, "Level of correctness comment is required"),
+          memory_comment: z.string().min(1, "Memory comment is required"),
+        })
+        .refine(
+          (data) => {
+            if (data.level_of_correctness !== 2) {
+              return (
+                data.issue_type &&
+                data.issue_comment &&
+                data.issue_source &&
+                data.issue_comment.trim() !== "" &&
+                data.issue_source.trim() !== ""
+              );
+            }
+            return true;
+          },
+          {
+            message:
+              "Issue type, comment, and source are required when level of correctness is not 2",
+            path: ["issue_type"],
+          }
+        )
+    ),
+    memory: z.object({
+      memory_comment: z.string().min(1, "Memory comment is required"),
+      memory_naturality: z.enum(["yes", "no"]),
+      context_accuracy: z.enum(["yes", "no"]),
+      code_referencing: z.enum(["yes", "no"]),
+      remembers_debugging_history: z.enum(["yes", "no"]),
+      maintains_coding_style: z.enum(["yes", "no"]),
+      remembers_environment: z.enum(["yes", "no"]),
+      avoids_referencing_irrelevant_memory: z.enum(["yes", "no"]),
+      avoids_storing_irrelevant_memory: z.enum(["yes", "no"]),
+    }),
+  })
+  .refine(
+    (data) => {
+      if (data.workflow === "existing_codebase") {
+        return (
+          data.codebase.url.trim() !== "" &&
+          data.codebase.description.trim() !== ""
+        );
+      }
+      return true;
+    },
+    {
+      message:
+        "For existing codebase workflow, both URL and description are required",
+      path: ["codebase"],
+    }
+  );
+
+type MetadataFormData = z.infer<typeof metadataSchema>;
 
 export default function Component() {
   const [jsonInput, setJsonInput] = useState("");
@@ -32,31 +153,6 @@ export default function Component() {
 
     try {
       const data = JSON.parse(jsonInput);
-
-      // Trim all string values except 'prompt' field
-      const trimStringValues = (obj: any): any => {
-        if (Array.isArray(obj)) {
-          return obj.map(trimStringValues);
-        } else if (obj !== null && typeof obj === "object") {
-          const trimmed: any = {};
-          for (const [key, value] of Object.entries(obj)) {
-            if (key === "prompt") {
-              // Don't trim the prompt field
-              trimmed[key] = value;
-            } else if (typeof value === "string") {
-              trimmed[key] = value.trim();
-            } else {
-              trimmed[key] = trimStringValues(value);
-            }
-          }
-          return trimmed;
-        }
-        return obj;
-      };
-
-      // Apply trimming to the parsed data
-      const trimmedData = trimStringValues(data);
-
       const expectedPromptCount = Number.parseInt(promptCount);
 
       // Check if promptCount is a positive whole number
@@ -70,328 +166,45 @@ export default function Component() {
           field: "prompt_count",
           message: "Number of prompts must be a positive whole number",
         });
-      } // Check prompts array length
-      if (!trimmedData.prompts || !Array.isArray(trimmedData.prompts)) {
+      }
+
+      // Check prompts array length
+      if (!data.prompts || !Array.isArray(data.prompts)) {
         validationErrors.push({
           field: "prompts",
           message: "Prompts array is missing or not an array",
         });
-      } else if (trimmedData.prompts.length !== expectedPromptCount) {
+      } else if (data.prompts.length !== expectedPromptCount) {
         validationErrors.push({
           field: "prompts",
-          message: `Prompts array length (${trimmedData.prompts.length}) does not match expected count (${expectedPromptCount})`,
+          message: `Prompts array length (${data.prompts.length}) does not match expected count (${expectedPromptCount})`,
         });
       }
 
-      // Check uuid and hfi_id consistency
-      if (!trimmedData.uuid || trimmedData.uuid === "") {
-        validationErrors.push({
-          field: "uuid",
-          message: "UUID should not be empty",
+      // Validate with Zod schema
+      const result = metadataSchema.safeParse(data);
+      if (!result.success) {
+        result.error.issues.forEach((issue) => {
+          // Convert Zod error to our ValidationError format
+          const field = issue.path.join(".");
+          const promptIndex = field.match(/prompts\.(\d+)/)?.[1];
+
+          validationErrors.push({
+            field: field,
+            message: issue.message,
+            index: promptIndex ? parseInt(promptIndex) : undefined,
+          });
         });
       }
 
-      // Check jira_id
-      if (!trimmedData.jira_id || trimmedData.jira_id === "") {
-        validationErrors.push({
-          field: "jira_id",
-          message: "JIRA ID should not be empty",
-        });
-      } else if (!trimmedData.jira_id.startsWith("ANTHS-")) {
-        validationErrors.push({
-          field: "jira_id",
-          message: "JIRA ID should start with 'ANTHS-'",
-        });
-      }
-
-      // Check programming_language
-      if (
-        !trimmedData.programming_language ||
-        trimmedData.programming_language === ""
-      ) {
-        validationErrors.push({
-          field: "programming_language",
-          message: "Programming language should not be empty",
-        });
-      }
-
-      // Check model
-      const expectedModel =
-        "83aa91117c2fac3e25a3757eaa59f29ed3aeaf4dd7d3d384c673086c321e0644";
-      if (trimmedData.model !== expectedModel) {
-        validationErrors.push({
-          field: "model",
-          message: `Model should be exactly: ${expectedModel}`,
-        });
-      }
-
-      // Check root_gdrive
-      if (!trimmedData.root_gdrive || trimmedData.root_gdrive === "") {
-        validationErrors.push({
-          field: "root_gdrive",
-          message: "Root Google Drive should not be empty",
-        });
-      }
-
-      // Check workflow and codebase
-      if (
-        !trimmedData.workflow ||
-        !["new_codebase", "existing_codebase"].includes(trimmedData.workflow)
-      ) {
-        validationErrors.push({
-          field: "workflow",
-          message:
-            "Workflow should be either 'new_codebase' or 'existing_codebase'",
-        });
-      } else {
-        if (trimmedData.workflow === "new_codebase") {
-          if (
-            trimmedData.codebase?.url !== "" ||
-            trimmedData.codebase?.description !== ""
-          ) {
-            validationErrors.push({
-              field: "codebase",
-              message:
-                "For new_codebase workflow, codebase url and description should be empty",
-            });
-          }
-        } else if (trimmedData.workflow === "existing_codebase") {
-          if (!trimmedData.codebase?.url || trimmedData.codebase.url === "") {
-            validationErrors.push({
-              field: "codebase.url",
-              message:
-                "For existing_codebase workflow, codebase URL should not be empty",
-            });
-          }
-          if (
-            !trimmedData.codebase?.description ||
-            trimmedData.codebase.description === ""
-          ) {
-            validationErrors.push({
-              field: "codebase.description",
-              message:
-                "For existing_codebase workflow, codebase description should not be empty",
-            });
-          }
-        }
-      }
-
-      // Validate prompts array
-      if (trimmedData.prompts && Array.isArray(trimmedData.prompts)) {
-        trimmedData.prompts.forEach((prompt: any, index: number) => {
-          // Check hfi_id matches uuid
-          if (prompt.hfi_id !== trimmedData.uuid) {
+      // Check HFI ID matches UUID for each prompt
+      if (data.prompts && Array.isArray(data.prompts) && data.uuid) {
+        data.prompts.forEach((prompt: any, index: number) => {
+          if (prompt.hfi_id !== data.uuid) {
             validationErrors.push({
               field: "hfi_id",
               message: "HFI ID should match the main UUID",
               index,
-            });
-          }
-
-          // Required fields check
-          const requiredFields = [
-            "hfi_id",
-            "prompt",
-            "choice",
-            "gdrive",
-            "usecase",
-            "comment",
-            "level_of_correctness",
-            "level_of_correctness_comment",
-            "memory_comment",
-          ];
-
-          requiredFields.forEach((field) => {
-            if (field === "choice" || field === "level_of_correctness") {
-              if (
-                prompt[field] === undefined ||
-                prompt[field] === null ||
-                prompt[field] === ""
-              ) {
-                validationErrors.push({
-                  field,
-                  message: `${field} should not be empty`,
-                  index,
-                });
-              }
-            } else {
-              // For string fields, check for empty or whitespace-only strings
-              if (
-                !prompt[field] ||
-                (typeof prompt[field] === "string" &&
-                  prompt[field].trim() === "")
-              ) {
-                validationErrors.push({
-                  field,
-                  message: `${field} should not be empty`,
-                  index,
-                });
-              }
-            }
-          });
-          // Check choice range
-          if (
-            typeof prompt.choice !== "number" ||
-            prompt.choice < 0 ||
-            prompt.choice > 7
-          ) {
-            validationErrors.push({
-              field: "choice",
-              message: "Choice should be a number between 0-7",
-              index,
-            });
-          }
-
-          // Check gdrive is a link
-          if (prompt.gdrive && !prompt.gdrive.startsWith("http")) {
-            validationErrors.push({
-              field: "gdrive",
-              message: "Google Drive should be a valid link",
-              index,
-            });
-          }
-
-          // Check usecase
-          const validUsecases = [
-            "initial_development",
-            "feature_implementation",
-            "debugging_fixes",
-            "optimization_testing",
-          ];
-          if (!validUsecases.includes(prompt.usecase)) {
-            validationErrors.push({
-              field: "usecase",
-              message: `Usecase should be one of: ${validUsecases.join(", ")}`,
-              index,
-            });
-          }
-
-          // Check issue fields consistency
-          const issueFields = ["issue_type", "issue_comment", "issue_source"];
-          const hasIssueData = issueFields.some(
-            (field) => prompt[field] && prompt[field].trim() !== ""
-          );
-
-          if (hasIssueData) {
-            issueFields.forEach((field) => {
-              if (!prompt[field] || prompt[field].trim() === "") {
-                validationErrors.push({
-                  field,
-                  message:
-                    "If any issue field has value, all issue fields must have values",
-                  index,
-                });
-              }
-            });
-
-            // Check issue_type values
-            const validIssueTypes = [
-              "missing_memory",
-              "technical_inconsistency",
-              "tool",
-              "code_correctness",
-              "setup",
-              "other",
-            ];
-            if (
-              prompt.issue_type &&
-              !validIssueTypes.includes(prompt.issue_type)
-            ) {
-              validationErrors.push({
-                field: "issue_type",
-                message: `Issue type should be one of: ${validIssueTypes.join(
-                  ", "
-                )}`,
-                index,
-              });
-            }
-          }
-
-          // Check level_of_correctness range
-          if (
-            typeof prompt.level_of_correctness !== "number" ||
-            prompt.level_of_correctness < -1 ||
-            prompt.level_of_correctness > 2
-          ) {
-            validationErrors.push({
-              field: "level_of_correctness",
-              message:
-                "Level of correctness should be a number between -1 to 2",
-              index,
-            });
-          }
-
-          if (prompt.level_of_correctness !== 2) {
-            const issueFields = ["issue_type", "issue_comment", "issue_source"];
-            issueFields.forEach((field) => {
-              if (!prompt[field] || prompt[field].trim() === "") {
-                validationErrors.push({
-                  field,
-                  message: `${field} should not be empty when level_of_correctness is not 2`,
-                  index,
-                });
-              }
-            });
-
-            // Check issue_type values when required
-            const validIssueTypes = [
-              "missing_memory",
-              "technical_inconsistency",
-              "tool",
-              "code_correctness",
-              "setup",
-              "other",
-            ];
-            if (
-              prompt.issue_type &&
-              !validIssueTypes.includes(prompt.issue_type)
-            ) {
-              validationErrors.push({
-                field: "issue_type",
-                message: `Issue type should be one of: ${validIssueTypes.join(
-                  ", "
-                )}`,
-                index,
-              });
-            }
-          }
-        });
-      } // Check memory object
-      if (!trimmedData.memory) {
-        validationErrors.push({
-          field: "memory",
-          message: "Memory object is required",
-        });
-      } else {
-        if (
-          !trimmedData.memory.memory_comment ||
-          trimmedData.memory.memory_comment === ""
-        ) {
-          validationErrors.push({
-            field: "memory.memory_comment",
-            message: "Memory comment should not be empty",
-          });
-        }
-
-        const memoryBooleanFields = [
-          "memory_naturality",
-          "context_accuracy",
-          "code_referencing",
-          "remembers_debugging_history",
-          "maintains_coding_style",
-          "remembers_enviroment",
-          "avoids_referencing_irrelevant_memory",
-          "avoids_storing_irrelevant_memory",
-        ];
-
-        memoryBooleanFields.forEach((field) => {
-          if (
-            trimmedData.memory[field] &&
-            !["yes", "no", "Yes", "No"].includes(trimmedData.memory[field])
-          ) {
-            validationErrors.push({
-              field: `memory.${field}`,
-              message: `${field} should be either 'yes' or 'no'`,
             });
           }
         });
@@ -417,45 +230,819 @@ export default function Component() {
     return acc;
   }, {} as Record<string, ValidationError[]>);
 
+  const [generatedJson, setGeneratedJson] = useState<string>("");
+
+  const form = useForm<MetadataFormData>({
+    resolver: zodResolver(metadataSchema),
+    defaultValues: {
+      uuid: "",
+      jira_id: "ANTHS-",
+      programming_language: "",
+      model: "83aa91117c2fac3e25a3757eaa59f29ed3aeaf4dd7d3d384c673086c321e0644",
+      root_gdrive: "",
+      workflow: "new_codebase",
+      codebase: {
+        url: "",
+        description: "",
+      },
+      prompts: [
+        {
+          hfi_id: "",
+          prompt: "",
+          choice: 0,
+          gdrive: "",
+          usecase: "initial_development",
+          comment: "",
+          level_of_correctness: 2,
+          level_of_correctness_comment: "",
+          memory_comment: "",
+        },
+      ],
+      memory: {
+        memory_comment: "",
+        memory_naturality: "yes",
+        context_accuracy: "yes",
+        code_referencing: "yes",
+        remembers_debugging_history: "yes",
+        maintains_coding_style: "yes",
+        remembers_environment: "yes",
+        avoids_referencing_irrelevant_memory: "yes",
+        avoids_storing_irrelevant_memory: "yes",
+      },
+    },
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: "prompts",
+  });
+
+  const onSubmit = (data: MetadataFormData) => {
+    // Set hfi_id to match uuid for all prompts
+    const processedData = {
+      ...data,
+      prompts: data.prompts.map((prompt) => ({
+        ...prompt,
+        hfi_id: data.uuid,
+      })),
+    };
+    setGeneratedJson(JSON.stringify(processedData, null, 2));
+    const { toast } = useToast();
+    toast({
+      title: "Metadata Generated",
+      description: "Your metadata JSON has been generated successfully!",
+    });
+  };
+  const { toast } = useToast();
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(generatedJson);
+    toast({
+      title: "Copied!",
+      description: "JSON copied to clipboard",
+    });
+  };
+
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
+    <div className="max-w-6xl mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>JSON Validation Tool</CardTitle>
+          <CardTitle>JSON Validation & Generation Tool</CardTitle>
           <CardDescription>
-            Validate your structured evaluation JSON data against the specified
-            requirements
+            Validate existing JSON data or generate new structured evaluation
+            metadata
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label htmlFor="prompt-count">Number of Prompts</Label>
-            <Input
-              id="prompt-count"
-              type="number"
-              placeholder="Enter expected number of prompts"
-              value={promptCount}
-              onChange={(e) => setPromptCount(e.target.value)}
-            />
-          </div>
+        <CardContent>
+          <Tabs defaultValue="checker" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="checker">Metadata Checker</TabsTrigger>
+              <TabsTrigger value="generator">Metadata Generator</TabsTrigger>
+            </TabsList>
 
-          <div>
-            <Label htmlFor="json-input">JSON Data</Label>
-            <Textarea
-              id="json-input"
-              placeholder="Paste your JSON data here..."
-              value={jsonInput}
-              onChange={(e) => setJsonInput(e.target.value)}
-              className="min-h-[200px] font-mono text-sm"
-            />
-          </div>
+            <TabsContent value="checker" className="space-y-4">
+              {/* Existing validation logic */}
+              <div>
+                <Label htmlFor="prompt-count">Number of Prompts</Label>
+                <Input
+                  id="prompt-count"
+                  type="number"
+                  placeholder="Enter expected number of prompts"
+                  value={promptCount}
+                  onChange={(e) => setPromptCount(e.target.value)}
+                />
+              </div>
 
-          <Button onClick={validateJson} className="w-full">
-            Validate JSON
-          </Button>
+              <div>
+                <Label htmlFor="json-input">JSON Data</Label>
+                <Textarea
+                  id="json-input"
+                  placeholder="Paste your JSON data here..."
+                  value={jsonInput}
+                  onChange={(e) => setJsonInput(e.target.value)}
+                  className="min-h-[200px] font-mono text-sm"
+                />
+              </div>
+
+              <Button onClick={validateJson} className="w-full">
+                Validate JSON
+              </Button>
+            </TabsContent>
+
+            <TabsContent value="generator" className="space-y-4">
+              <Form {...form}>
+                <form
+                  onSubmit={form.handleSubmit(onSubmit)}
+                  className="space-y-6"
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="uuid"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>UUID</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Enter UUID" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="jira_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>JIRA ID</FormLabel>
+                          <FormControl>
+                            <Input placeholder="ANTHS-..." {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="programming_language"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Programming Language</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="e.g., Python, JavaScript"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="model"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Model</FormLabel>
+                          <FormControl>
+                            <Input {...field} disabled className="bg-muted" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="root_gdrive"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Root Google Drive URL</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="https://drive.google.com/..."
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name="workflow"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Workflow</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select workflow type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="new_codebase">
+                              New Codebase
+                            </SelectItem>
+                            <SelectItem value="existing_codebase">
+                              Existing Codebase
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {form.watch("workflow") === "existing_codebase" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="codebase.url"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Codebase URL</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="https://github.com/..."
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="codebase.description"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Codebase Description</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Brief description of the codebase"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold">Prompts</h3>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          append({
+                            hfi_id: "",
+                            prompt: "",
+                            choice: 0,
+                            gdrive: "",
+                            usecase: "initial_development",
+                            comment: "",
+                            level_of_correctness: 2,
+                            level_of_correctness_comment: "",
+                            memory_comment: "",
+                          })
+                        }
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Prompt
+                      </Button>
+                    </div>
+
+                    {fields.map((field, index) => (
+                      <Card key={field.id} className="p-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <h4 className="font-medium">Prompt {index + 1}</h4>
+                          {fields.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => remove(index)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name={`prompts.${index}.prompt`}
+                            render={({ field }) => (
+                              <FormItem className="md:col-span-2">
+                                <FormLabel>Prompt</FormLabel>
+                                <FormControl>
+                                  <Textarea
+                                    placeholder="Enter the prompt text"
+                                    {...field}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name={`prompts.${index}.choice`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Choice (0-7)</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    max="7"
+                                    {...field}
+                                    onChange={(e) =>
+                                      field.onChange(Number(e.target.value))
+                                    }
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name={`prompts.${index}.gdrive`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Google Drive URL</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    placeholder="https://drive.google.com/..."
+                                    {...field}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name={`prompts.${index}.usecase`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Use Case</FormLabel>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  defaultValue={field.value}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="initial_development">
+                                      Initial Development
+                                    </SelectItem>
+                                    <SelectItem value="feature_implementation">
+                                      Feature Implementation
+                                    </SelectItem>
+                                    <SelectItem value="debugging_fixes">
+                                      Debugging Fixes
+                                    </SelectItem>
+                                    <SelectItem value="optimization_testing">
+                                      Optimization Testing
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name={`prompts.${index}.level_of_correctness`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Level of Correctness</FormLabel>
+                                <Select
+                                  onValueChange={(value) =>
+                                    field.onChange(Number(value))
+                                  }
+                                  defaultValue={field.value?.toString()}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="2">2</SelectItem>
+                                    <SelectItem value="1">1</SelectItem>
+                                    <SelectItem value="0">0</SelectItem>
+                                    <SelectItem value="-1">-1</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name={`prompts.${index}.comment`}
+                            render={({ field }) => (
+                              <FormItem className="md:col-span-2">
+                                <FormLabel>Comment</FormLabel>
+                                <FormControl>
+                                  <Textarea
+                                    placeholder="Enter comment"
+                                    {...field}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name={`prompts.${index}.level_of_correctness_comment`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>
+                                  Level of Correctness Comment
+                                </FormLabel>
+                                <FormControl>
+                                  <Textarea
+                                    placeholder="Comment on correctness level"
+                                    {...field}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name={`prompts.${index}.memory_comment`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Memory Comment</FormLabel>
+                                <FormControl>
+                                  <Textarea
+                                    placeholder="Comment on memory usage"
+                                    {...field}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          {form.watch(
+                            `prompts.${index}.level_of_correctness`
+                          ) !== 2 && (
+                            <>
+                              <FormField
+                                control={form.control}
+                                name={`prompts.${index}.issue_type`}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Issue Type</FormLabel>
+                                    <Select
+                                      onValueChange={field.onChange}
+                                      defaultValue={field.value}
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select issue type" />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        <SelectItem value="missing_memory">
+                                          Missing Memory
+                                        </SelectItem>
+                                        <SelectItem value="technical_inconsistency">
+                                          Technical Inconsistency
+                                        </SelectItem>
+                                        <SelectItem value="tool">
+                                          Tool
+                                        </SelectItem>
+                                        <SelectItem value="code_correctness">
+                                          Code Correctness
+                                        </SelectItem>
+                                        <SelectItem value="setup">
+                                          Setup
+                                        </SelectItem>
+                                        <SelectItem value="other">
+                                          Other
+                                        </SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              <FormField
+                                control={form.control}
+                                name={`prompts.${index}.issue_comment`}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Issue Comment</FormLabel>
+                                    <FormControl>
+                                      <Textarea
+                                        placeholder="Describe the issue"
+                                        {...field}
+                                      />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              <FormField
+                                control={form.control}
+                                name={`prompts.${index}.issue_source`}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Issue Source</FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        placeholder="Source of the issue"
+                                        {...field}
+                                      />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            </>
+                          )}
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+
+                  <Card className="p-4">
+                    <h3 className="text-lg font-semibold mb-4">
+                      Memory Settings
+                    </h3>
+                    <div className="space-y-4">
+                      <FormField
+                        control={form.control}
+                        name="memory.memory_comment"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Memory Comment</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder="Overall memory comment"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="memory.memory_naturality"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Memory Naturality</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                defaultValue={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="yes">Yes</SelectItem>
+                                  <SelectItem value="no">No</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="memory.context_accuracy"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Context Accuracy</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                defaultValue={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="yes">Yes</SelectItem>
+                                  <SelectItem value="no">No</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="memory.code_referencing"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Code Referencing</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                defaultValue={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="yes">Yes</SelectItem>
+                                  <SelectItem value="no">No</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="memory.remembers_debugging_history"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Remembers Debugging History</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                defaultValue={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="yes">Yes</SelectItem>
+                                  <SelectItem value="no">No</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="memory.maintains_coding_style"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Maintains Coding Style</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                defaultValue={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="yes">Yes</SelectItem>
+                                  <SelectItem value="no">No</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="memory.remembers_environment"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Remembers Environment</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                defaultValue={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="yes">Yes</SelectItem>
+                                  <SelectItem value="no">No</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="memory.avoids_referencing_irrelevant_memory"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                Avoids Referencing Irrelevant Memory
+                              </FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                defaultValue={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="yes">Yes</SelectItem>
+                                  <SelectItem value="no">No</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="memory.avoids_storing_irrelevant_memory"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                Avoids Storing Irrelevant Memory
+                              </FormLabel>
+                              <FormControl>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  defaultValue={field.value}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="yes">Yes</SelectItem>
+                                    <SelectItem value="no">No</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Button type="submit" className="w-full">
+                    Generate Metadata JSON
+                  </Button>
+                </form>
+              </Form>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
+      {/* Validation Results (for checker tab) */}
       {isValid !== null && (
         <Card>
           <CardHeader>
@@ -512,6 +1099,26 @@ export default function Component() {
                 )}
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Generated JSON Preview (for generator tab) */}
+      {generatedJson && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              Generated Metadata JSON
+              <Button variant="outline" size="sm" onClick={copyToClipboard}>
+                <Copy className="h-4 w-4 mr-2" />
+                Copy JSON
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <pre className="bg-muted p-4 rounded-lg overflow-auto max-h-96 text-sm">
+              <code>{generatedJson}</code>
+            </pre>
           </CardContent>
         </Card>
       )}
