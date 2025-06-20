@@ -443,7 +443,7 @@ export default function Component() {
                           defaultValue={field.value}
                         >
                           <FormControl>
-                            <SelectTrigger>
+                            <SelectTrigger className="w-full">
                               <SelectValue placeholder="Select workflow type" />
                             </SelectTrigger>
                           </FormControl>
@@ -609,7 +609,7 @@ export default function Component() {
                                   defaultValue={field.value}
                                 >
                                   <FormControl>
-                                    <SelectTrigger>
+                                    <SelectTrigger className="w-full">
                                       <SelectValue />
                                     </SelectTrigger>
                                   </FormControl>
@@ -646,7 +646,7 @@ export default function Component() {
                                   defaultValue={field.value?.toString()}
                                 >
                                   <FormControl>
-                                    <SelectTrigger>
+                                    <SelectTrigger className="w-full">
                                       <SelectValue />
                                     </SelectTrigger>
                                   </FormControl>
@@ -730,7 +730,7 @@ export default function Component() {
                                       defaultValue={field.value}
                                     >
                                       <FormControl>
-                                        <SelectTrigger>
+                                        <SelectTrigger className="w-full">
                                           <SelectValue placeholder="Select issue type" />
                                         </SelectTrigger>
                                       </FormControl>
@@ -834,7 +834,7 @@ export default function Component() {
                                 defaultValue={field.value}
                               >
                                 <FormControl>
-                                  <SelectTrigger>
+                                  <SelectTrigger className="w-full">
                                     <SelectValue />
                                   </SelectTrigger>
                                 </FormControl>
@@ -859,7 +859,7 @@ export default function Component() {
                                 defaultValue={field.value}
                               >
                                 <FormControl>
-                                  <SelectTrigger>
+                                  <SelectTrigger className="w-full">
                                     <SelectValue />
                                   </SelectTrigger>
                                 </FormControl>
@@ -884,7 +884,7 @@ export default function Component() {
                                 defaultValue={field.value}
                               >
                                 <FormControl>
-                                  <SelectTrigger>
+                                  <SelectTrigger className="w-full">
                                     <SelectValue />
                                   </SelectTrigger>
                                 </FormControl>
@@ -909,7 +909,7 @@ export default function Component() {
                                 defaultValue={field.value}
                               >
                                 <FormControl>
-                                  <SelectTrigger>
+                                  <SelectTrigger className="w-full">
                                     <SelectValue />
                                   </SelectTrigger>
                                 </FormControl>
@@ -934,7 +934,7 @@ export default function Component() {
                                 defaultValue={field.value}
                               >
                                 <FormControl>
-                                  <SelectTrigger>
+                                  <SelectTrigger className="w-full">
                                     <SelectValue />
                                   </SelectTrigger>
                                 </FormControl>
@@ -959,7 +959,7 @@ export default function Component() {
                                 defaultValue={field.value}
                               >
                                 <FormControl>
-                                  <SelectTrigger>
+                                  <SelectTrigger className="w-full">
                                     <SelectValue />
                                   </SelectTrigger>
                                 </FormControl>
@@ -986,7 +986,7 @@ export default function Component() {
                                 defaultValue={field.value}
                               >
                                 <FormControl>
-                                  <SelectTrigger>
+                                  <SelectTrigger className="w-full">
                                     <SelectValue />
                                   </SelectTrigger>
                                 </FormControl>
@@ -1014,7 +1014,7 @@ export default function Component() {
                                   defaultValue={field.value}
                                 >
                                   <FormControl>
-                                    <SelectTrigger>
+                                    <SelectTrigger className="w-full">
                                       <SelectValue />
                                     </SelectTrigger>
                                   </FormControl>
