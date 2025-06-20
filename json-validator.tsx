@@ -57,8 +57,8 @@ const metadataSchema = z
     root_gdrive: z.string().url("Must be a valid URL"),
     workflow: z.enum(["new_codebase", "existing_codebase"]),
     codebase: z.object({
-      url: z.string(),
-      description: z.string(),
+      url: z.string().optional(),
+      description: z.string().optional(),
     }),
     prompts: z.array(
       z
@@ -83,9 +83,10 @@ const metadataSchema = z
               "setup",
               "other",
             ])
+            .or(z.literal(""))
             .optional(),
-          issue_comment: z.string().optional(),
-          issue_source: z.string().optional(),
+          issue_comment: z.string().or(z.literal("")).optional(),
+          issue_source: z.string().or(z.literal("")).optional(),
           level_of_correctness: z.number().min(-1).max(2),
           level_of_correctness_comment: z
             .string()
@@ -100,9 +101,11 @@ const metadataSchema = z
                 data.issue_comment &&
                 data.issue_source &&
                 data.issue_comment.trim() !== "" &&
-                data.issue_source.trim() !== ""
+                data.issue_source.trim() !== "" &&
+                data.issue_type.trim() !== ""
               );
             }
+            // If level_of_correctness is 2, allow empty string or undefined for issue fields
             return true;
           },
           {
@@ -128,15 +131,24 @@ const metadataSchema = z
     (data) => {
       if (data.workflow === "existing_codebase") {
         return (
+          data.codebase &&
+          typeof data.codebase.url === "string" &&
           data.codebase.url.trim() !== "" &&
+          typeof data.codebase.description === "string" &&
           data.codebase.description.trim() !== ""
         );
+      } else {
+        // For new_codebase, codebase fields must be empty or undefined
+        return (
+          !data.codebase ||
+          ((data.codebase.url === undefined || data.codebase.url === "") &&
+            (data.codebase.description === undefined || data.codebase.description === ""))
+        );
       }
-      return true;
     },
     {
       message:
-        "For existing codebase workflow, both URL and description are required",
+        "For existing codebase workflow, both URL and description are required. For new codebase, both must be empty.",
       path: ["codebase"],
     }
   );
@@ -1099,26 +1111,6 @@ export default function Component() {
                 )}
               </div>
             )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Generated JSON Preview (for generator tab) */}
-      {generatedJson && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              Generated Metadata JSON
-              <Button variant="outline" size="sm" onClick={copyToClipboard}>
-                <Copy className="h-4 w-4 mr-2" />
-                Copy JSON
-              </Button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <pre className="bg-muted p-4 rounded-lg overflow-auto max-h-96 text-sm">
-              <code>{generatedJson}</code>
-            </pre>
           </CardContent>
         </Card>
       )}
