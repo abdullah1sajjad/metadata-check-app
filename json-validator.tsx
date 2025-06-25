@@ -14,7 +14,14 @@ import {
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, CheckCircle2 } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Copy,
+  Plus,
+  ExternalLink,
+  Trash2,
+} from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -34,7 +41,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Copy, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface ValidationError {
@@ -142,7 +148,8 @@ const metadataSchema = z
         return (
           !data.codebase ||
           ((data.codebase.url === undefined || data.codebase.url === "") &&
-            (data.codebase.description === undefined || data.codebase.description === ""))
+            (data.codebase.description === undefined ||
+              data.codebase.description === ""))
         );
       }
     },
@@ -160,6 +167,7 @@ export default function Component() {
   const [promptCount, setPromptCount] = useState("");
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [isValid, setIsValid] = useState<boolean | null>(null);
+  const [extractedPrompts, setExtractedPrompts] = useState<any[]>([]);
   const validateJson = () => {
     const validationErrors: ValidationError[] = [];
 
@@ -221,9 +229,19 @@ export default function Component() {
           }
         });
       }
-
       setErrors(validationErrors);
       setIsValid(validationErrors.length === 0);
+
+      // Extract prompts if validation is successful
+      if (
+        validationErrors.length === 0 &&
+        data.prompts &&
+        Array.isArray(data.prompts)
+      ) {
+        setExtractedPrompts(data.prompts);
+      } else {
+        setExtractedPrompts([]);
+      }
     } catch (error) {
       validationErrors.push({
         field: "json",
@@ -306,6 +324,15 @@ export default function Component() {
     });
   };
   const { toast } = useToast();
+
+  const copyPromptToClipboard = (prompt: string, index: number) => {
+    navigator.clipboard.writeText(prompt);
+    toast({
+      title: "Copied!",
+      description: `Prompt ${index + 1} copied to clipboard`,
+    });
+  };
+
   const copyToClipboard = () => {
     navigator.clipboard.writeText(generatedJson);
     toast({
@@ -329,37 +356,106 @@ export default function Component() {
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="checker">Metadata Checker</TabsTrigger>
               <TabsTrigger value="generator">Metadata Generator</TabsTrigger>
-            </TabsList>
-
+            </TabsList>{" "}
             <TabsContent value="checker" className="space-y-4">
-              {/* Existing validation logic */}
-              <div>
-                <Label htmlFor="prompt-count">Number of Prompts</Label>
-                <Input
-                  id="prompt-count"
-                  type="number"
-                  placeholder="Enter expected number of prompts"
-                  value={promptCount}
-                  onChange={(e) => setPromptCount(e.target.value)}
-                />
-              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Left side - Validation inputs */}
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="prompt-count">Number of Prompts</Label>
+                    <Input
+                      id="prompt-count"
+                      type="number"
+                      placeholder="Enter expected number of prompts"
+                      value={promptCount}
+                      onChange={(e) => setPromptCount(e.target.value)}
+                    />
+                  </div>
 
-              <div>
-                <Label htmlFor="json-input">JSON Data</Label>
-                <Textarea
-                  id="json-input"
-                  placeholder="Paste your JSON data here..."
-                  value={jsonInput}
-                  onChange={(e) => setJsonInput(e.target.value)}
-                  className="min-h-[200px] font-mono text-sm"
-                />
-              </div>
+                  <div>
+                    <Label htmlFor="json-input">JSON Data</Label>
+                    <Textarea
+                      id="json-input"
+                      placeholder="Paste your JSON data here..."
+                      value={jsonInput}
+                      onChange={(e) => setJsonInput(e.target.value)}
+                      className="min-h-[200px] font-mono text-sm"
+                    />
+                  </div>
 
-              <Button onClick={validateJson} className="w-full">
-                Validate JSON
-              </Button>
+                  <Button onClick={validateJson} className="w-full">
+                    Validate JSON
+                  </Button>
+                </div>
+
+                {/* Right side - Extracted prompts */}
+                {isValid && extractedPrompts.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-lg font-semibold">
+                        Extracted Prompts
+                      </Label>
+                      <Badge variant="secondary">
+                        {extractedPrompts.length} prompts
+                      </Badge>
+                    </div>
+
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                      {extractedPrompts.map((promptObj: any, index: number) => (
+                        <Card key={index} className="p-4">
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline">
+                                  Prompt {index + 1}
+                                </Badge>
+                                <Badge variant="secondary">
+                                  Choice: {promptObj.choice}
+                                </Badge>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    copyPromptToClipboard(
+                                      promptObj.prompt.replace(/'/g, '"'),
+                                      index
+                                    )
+                                  }
+                                  className="h-8 px-2"
+                                >
+                                  <Copy className="h-3 w-3 mr-1" />
+                                  Copy
+                                </Button>
+                                {promptObj.gdrive && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                      window.open(promptObj.gdrive, "_blank")
+                                    }
+                                    className="h-8 px-2"
+                                  >
+                                    <ExternalLink className="h-3 w-3 mr-1" />
+                                    Interaction
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="text-sm text-muted-foreground bg-muted p-3 rounded max-h-32 overflow-y-auto">
+                              {/* replace ' with " */}
+                              {promptObj.prompt.replace(/'/g, '"')}
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </TabsContent>
-
             <TabsContent value="generator" className="space-y-4">
               <Form {...form}>
                 <form
@@ -443,7 +539,6 @@ export default function Component() {
                       )}
                     />
                   </div>
-
                   <FormField
                     control={form.control}
                     name="workflow"
@@ -472,7 +567,6 @@ export default function Component() {
                       </FormItem>
                     )}
                   />
-
                   {form.watch("workflow") === "existing_codebase" && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <FormField
@@ -510,7 +604,6 @@ export default function Component() {
                       />
                     </div>
                   )}
-
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="text-lg font-semibold">Prompts</h3>
@@ -811,7 +904,6 @@ export default function Component() {
                       </Card>
                     ))}
                   </div>
-
                   <Card className="p-4">
                     <h3 className="text-lg font-semibold mb-4">
                       Memory Settings
@@ -1042,13 +1134,38 @@ export default function Component() {
                         />
                       </div>
                     </div>
-                  </Card>
-
+                  </Card>{" "}
                   <Button type="submit" className="w-full">
                     Generate Metadata JSON
                   </Button>
                 </form>
               </Form>
+
+              {/* Generated JSON Display */}
+              {generatedJson && (
+                <Card className="mt-6">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle>Generated JSON</CardTitle>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={copyToClipboard}
+                      >
+                        <Copy className="h-4 w-4 mr-2" />
+                        Copy to Clipboard
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <Textarea
+                      value={generatedJson}
+                      readOnly
+                      className="min-h-[300px] font-mono text-sm"
+                    />
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
           </Tabs>
         </CardContent>
